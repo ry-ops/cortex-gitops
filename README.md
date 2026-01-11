@@ -1,32 +1,54 @@
-# Cortex GitOps Repository
+# Cortex GitOps
 
-GitOps repository for Cortex infrastructure deployments via ArgoCD.
+**The source of truth for all Cortex k3s deployments.**
+
+## The Control Plane Whispers; The Cluster Thunders
+
+This repository contains all Kubernetes manifests for the Cortex platform. ArgoCD watches this repository and automatically syncs changes to the k3s cluster.
 
 ## Structure
 
-- `csaf/` - Cortex Security App Framework manifests
-- `tui/` - Cortex TUI (Terminal User Interface) manifests
-- `control-plane/` - Control Plane architecture manifests
-- `apps/` - ArgoCD Application definitions
-
-## Deployment
-
-All deployments are managed by ArgoCD running in the k3s cluster.
-
-```bash
-# Add this repository to ArgoCD
-argocd repo add https://github.com/ry-ops/cortex-gitops.git
-
-# Applications will auto-sync to the cluster
+```
+cortex-gitops/
+├── apps/                       # Application manifests organized by namespace
+│   ├── cortex-system/         # Core platform services
+│   ├── cortex/                # Main cortex services
+│   ├── cortex-chat/           # Chat interface
+│   ├── cortex-cicd/           # CI/CD pipelines
+│   ├── cortex-dev/            # Development tools
+│   ├── cortex-security/       # Security services
+│   ├── cortex-knowledge/      # Knowledge management
+│   └── cortex-autonomous/     # Autonomous agents
+├── argocd-apps/               # ArgoCD Application definitions
+├── base/                      # Base manifests and kustomizations
+└── README.md
 ```
 
-## Projects
+## Workflow
 
-### CSAF (Cortex Security App Framework)
-Natural language to security monitoring apps pipeline.
+1. **Update manifests** in this repository
+2. **Commit and push** to main branch
+3. **ArgoCD detects changes** and syncs to cluster
+4. **Cluster pulls and deploys** automatically
 
-### Cortex TUI
-Real-time terminal dashboard for k3s cluster monitoring.
+## Rules
 
-### Control Plane
-GitOps enforcement architecture with ArgoCD.
+- ✅ All cluster resources MUST be defined here
+- ✅ Changes go through Git (version control + audit trail)
+- ✅ ArgoCD enforces self-healing (manual kubectl changes are reverted)
+- ❌ No direct kubectl apply (except emergencies with audit log)
+
+## Emergency Procedures
+
+If ArgoCD is down or broken:
+
+1. Apply fix: `kubectl apply -f emergency-fix.yaml`
+2. Log it: `echo "[date] EMERGENCY: reason" >> ~/cortex-audit.log`
+3. Commit to GitOps: Copy fix to this repo and commit immediately
+4. Verify ArgoCD syncs after recovery
+
+---
+
+**Version**: 1.0.0
+**Last Updated**: 2026-01-11
+**Directive**: CLAUDE.md v2.1.0 (Project Thunder)
