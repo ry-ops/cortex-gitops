@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csaf-registry
+  namespace: cortex-csaf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csaf-registry
+  template:
+    metadata:
+      labels:
+        app: csaf-registry
+    spec:
+      serviceAccountName: csaf-runtime
+      containers:
+        - name: registry
+          image: python:3.12-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --no-cache-dir fastapi uvicorn asyncpg pydantic
+
+              cat > /app/app.py <<'EOF'
+              from fastapi import FastAPI, HTTPException
+              from pydantic import BaseModel
+              import asyncpg
+              import os
+              from typing import Optional
+
+              app = FastAPI(title="CSAF Registry")
+              DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://csaf:csaf-password-change-me@csaf-postgres:5432/csaf")
+
+              class SecurityApp(BaseModel):
+                  name: str
+                  description: str
+                  yaml_definition: str
+                  enabled: bool = True
+
+              @app.on_event("startup")
+              async def startup():
+                  global db_pool
+                  db_pool = await asyncpg.create_pool(DATABASE_URL)
+                  async with db_pool.acquire() as conn:
+                      await conn.execute("""
+                          CREATE TABLE IF NOT EXISTS security_apps (
+                              id SERIAL PRIMARY KEY,
+                              name VARCHAR(255) UNIQUE NOT NULL,
+                              description TEXT,
+                              yaml_definition TEXT NOT NULL,
+                              enabled BOOLEAN DEFAULT true,
+                              created_at TIMESTAMP DEFAULT NOW()
+                          )
+                      """)
+
+              @app.get("/health")
+              async def health():
+                  return {"status": "healthy", "service": "csaf-registry"}
+
+              @app.get("/apps")
+              async def list_apps():
+                  async with db_pool.acquire() as conn:
+                      rows = await conn.fetch("SELECT * FROM security_apps")
+                      return [dict(row) for row in rows]
+
+              @app.post("/apps")
+              async def create_app(app_data: SecurityApp):
+                  async with db_pool.acquire() as conn:
+                      await conn.execute("""
+                          INSERT INTO security_apps (name, description, yaml_definition, enabled)
+                          VALUES ($1, $2, $3, $4)
+                      """, app_data.name, app_data.description, app_data.yaml_definition, app_data.enabled)
+                      return {"status": "created", "name": app_data.name}
+              EOF
+
+              python -m uvicorn app:app --host 0.0.0.0 --port 8080
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://csaf:csaf-password-change-me@csaf-postgres:5432/csaf"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csaf-registry
+  namespace: cortex-csaf
+spec:
+  selector:
+    app: csaf-registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
